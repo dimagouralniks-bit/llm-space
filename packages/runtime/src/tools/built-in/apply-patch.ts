@@ -81,15 +81,19 @@ export async function applyPatch(
     }
   }
 
-  for (const [filePath, contents] of writes) {
-    await fs.mkdir(path.dirname(filePath), { recursive: true });
-    await fs.writeFile(filePath, contents, "utf8");
-  }
-  for (const filePath of deletes) {
-    if (!writes.has(filePath)) {
-      await fs.rm(filePath);
-    }
-  }
+  await Promise.all(
+    Array.from(writes.entries()).map(async ([filePath, contents]) => {
+      await fs.mkdir(path.dirname(filePath), { recursive: true });
+      await fs.writeFile(filePath, contents, "utf8");
+    })
+  );
+  await Promise.all(
+    Array.from(deletes).map(async (filePath) => {
+      if (!writes.has(filePath)) {
+        await fs.rm(filePath);
+      }
+    })
+  );
 
   return `Success. Updated the following files:\n${summaries.join("\n")}`;
 }
