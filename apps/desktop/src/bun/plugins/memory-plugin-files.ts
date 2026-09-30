@@ -547,7 +547,7 @@ export default class MemorySaveTool implements PluginToolExtension {
         "m_" +
         Date.now().toString(36) +
         "_" +
-        Math.random().toString(36).slice(2, 8),
+        crypto.randomUUID().replaceAll("-", "").slice(0, 8),
       content,
       tags,
       origin,
