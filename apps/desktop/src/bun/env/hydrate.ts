@@ -16,10 +16,9 @@ import { basename } from "node:path";
  *
  * Idempotent and best-effort — a failure just leaves the minimal env in place.
  *
- * TODO(windows): Windows GUI apps inherit their environment from `explorer.exe`
- * (backed by the `HKCU\Environment` registry), so this shell-based approach is
- * neither needed nor applicable there. If a real gap ever surfaces on Windows,
- * handle it separately (e.g. read the registry) instead of spawning a shell.
+ * Windows GUI apps inherit their environment from `explorer.exe`
+ * (backed by the `HKCU\Environment` registry), so the shell-based approach is
+ * neither needed nor applicable there. Instead, we read the registry directly.
  */
 
 let _hydrated = false;
@@ -45,7 +44,46 @@ export function hydrateShellEnv(): void {
   _hydrated = true;
 
   if (process.platform === "win32") {
-    // See TODO(windows) above.
+    try {
+      const resolved = _readWindowsUserEnv();
+      if (!resolved) return;
+      for (const [key, rawValue] of Object.entries(resolved)) {
+        const upperKey = key.toUpperCase();
+
+        // Use a case-insensitive check for SKIP_KEYS just in case, though mostly POSIX.
+        let skip = false;
+        for (const skipKey of _SKIP_KEYS) {
+          if (skipKey.toUpperCase() === upperKey) {
+            skip = true;
+            break;
+          }
+        }
+        if (skip) continue;
+
+        // Expand any %VAR% patterns.
+        const value = rawValue.replace(/%([^%]+)%/g, (_, k) => process.env[k] || "");
+
+        if (upperKey === "PATH") {
+          // Find if there's already an existing PATH key (Path vs PATH vs path)
+          const envKey = Object.keys(process.env).find(k => k.toUpperCase() === "PATH") || "PATH";
+          const existingPaths = (process.env[envKey] || "").split(";");
+          const existingPathsLower = existingPaths.map(p => p.toLowerCase());
+          const newPaths = value.split(";");
+
+          for (const p of newPaths) {
+            if (p && !existingPathsLower.includes(p.toLowerCase())) {
+              existingPaths.push(p);
+              existingPathsLower.push(p.toLowerCase());
+            }
+          }
+          process.env[envKey] = existingPaths.join(";");
+        } else {
+          process.env[key] = value;
+        }
+      }
+    } catch (error) {
+      console.error("Failed to resolve Windows user environment", error);
+    }
     return;
   }
 
@@ -109,6 +147,33 @@ function _resolveShell(): string {
   // TODO: read the fish/nushell environment natively instead of falling back,
   // so variables exported *only* in their rc are still picked up.
   return existsSync("/bin/zsh") ? "/bin/zsh" : "/bin/bash";
+}
+
+/**
+ * Read the current user's environment variables from the Windows registry.
+ */
+function _readWindowsUserEnv(): Record<string, string> | null {
+  const result = Bun.spawnSync(["reg", "query", "HKCU\\Environment"], {
+    stdout: "pipe",
+    stderr: "ignore",
+    timeout: 5000,
+  });
+
+  if (!result.success) return null;
+  const output = Buffer.from(result.stdout).toString("utf8");
+
+  const env: Record<string, string> = {};
+  for (const line of output.split("\n")) {
+    // Expected output format: "    VarName    REG_SZ    Value" or "    VarName    REG_EXPAND_SZ    Value"
+    const match = /^\s*(.+?)\s+(REG_SZ|REG_EXPAND_SZ)\s+(.*)$/i.exec(line);
+    if (match) {
+      const key = match[1].trim();
+      const value = match[3].trim();
+      env[key] = value;
+    }
+  }
+
+  return Object.keys(env).length > 0 ? env : null;
 }
 
 /**
