@@ -15,11 +15,6 @@ import { basename } from "node:path";
  * once and import whatever environment it prints.
  *
  * Idempotent and best-effort — a failure just leaves the minimal env in place.
- *
- * TODO(windows): Windows GUI apps inherit their environment from `explorer.exe`
- * (backed by the `HKCU\Environment` registry), so this shell-based approach is
- * neither needed nor applicable there. If a real gap ever surfaces on Windows,
- * handle it separately (e.g. read the registry) instead of spawning a shell.
  */
 
 let _hydrated = false;
@@ -45,7 +40,7 @@ export function hydrateShellEnv(): void {
   _hydrated = true;
 
   if (process.platform === "win32") {
-    // See TODO(windows) above.
+    // Windows GUI apps inherit their environment natively.
     return;
   }
 
