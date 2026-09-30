@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getLlmSpaceHomePath } from "@llm-space/core/server";
@@ -20,18 +21,21 @@ export function getManagedSkillsDir(): string {
  * to load out of the box. No-op once the folder exists — a user who has cleared
  * or edited their skills folder is never overwritten.
  */
-export function seedSkills(): void {
+export async function seedSkills(): Promise<void> {
   const skillsDir = getManagedSkillsDir();
   if (existsSync(skillsDir)) {
     return;
   }
-  for (const { name, content } of [
+  const skills = [
     { name: "deep-research", content: deepResearchSkill },
     { name: "frontend-design", content: frontendDesignSkill },
     { name: "grill-me", content: grillMeSkill },
-  ]) {
-    const dir = path.join(skillsDir, name);
-    mkdirSync(dir, { recursive: true });
-    writeFileSync(path.join(dir, "SKILL.md"), content, "utf8");
-  }
+  ];
+  await Promise.all(
+    skills.map(async ({ name, content }) => {
+      const dir = path.join(skillsDir, name);
+      await mkdir(dir, { recursive: true });
+      await writeFile(path.join(dir, "SKILL.md"), content, "utf8");
+    })
+  );
 }
