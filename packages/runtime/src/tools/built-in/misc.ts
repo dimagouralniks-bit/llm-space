@@ -41,10 +41,6 @@ export const todoWriteTool: BuiltinTool = {
   },
 };
 
-export async function todo_write(): Promise<"OK"> {
-  return Promise.resolve("OK");
-}
-
 // -- sleep --------------------------------------------------------------------
 
 export const sleepTool: BuiltinTool = {
@@ -171,7 +167,7 @@ export const miscBuiltInTools: ToolEntry[] = [
   {
     tool: todoWriteTool,
     async execute() {
-      return todo_write();
+      return "OK";
     },
   },
   {
