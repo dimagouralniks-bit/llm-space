@@ -120,18 +120,9 @@ function _parsePatch(patchText: string): FilePatch[] {
     const header = lines[index++].trim();
     if (header.startsWith("*** Add File: ")) {
       const filePath = _requiredHeaderPath(header, "*** Add File: ");
-      const added: string[] = [];
-      while (index < lines.length - 1 && !_isFileHeader(lines[index])) {
-        const line = lines[index++];
-        if (!line.startsWith("+")) {
-          throw new Error(`Add-file lines must start with "+": ${line}`);
-        }
-        added.push(line.slice(1));
-      }
-      if (added.length === 0) {
-        throw new Error(`Add file hunk for path '${filePath}' is empty.`);
-      }
-      patches.push({ type: "add", path: filePath, lines: added });
+      const result = _parseAddFile(lines, index, filePath);
+      patches.push(result.patch);
+      index = result.nextIndex;
       continue;
     }
     if (header.startsWith("*** Delete File: ")) {
@@ -143,66 +134,9 @@ function _parsePatch(patchText: string): FilePatch[] {
     }
     if (header.startsWith("*** Update File: ")) {
       const filePath = _requiredHeaderPath(header, "*** Update File: ");
-      let moveTo: string | undefined;
-      if (lines[index]?.trim().startsWith("*** Move to: ")) {
-        moveTo = _requiredHeaderPath(lines[index++].trim(), "*** Move to: ");
-      }
-      const hunks: PatchHunk[] = [];
-      while (index < lines.length - 1 && !_isFileHeader(lines[index])) {
-        if (
-          lines[index].trim() === "" &&
-          lines[index - 1].trim() === "*** End of File"
-        ) {
-          index++;
-          continue;
-        }
-        let changeContext: string | undefined;
-        if (lines[index].trim().startsWith("@@")) {
-          const hunkHeader = lines[index++].trim();
-          if (hunkHeader !== "@@") {
-            changeContext = hunkHeader.slice(2).trim();
-            if (!changeContext) {
-              throw new Error(`Invalid hunk header: ${hunkHeader}`);
-            }
-          }
-        } else if (hunks.length > 0 || !_isDiffLine(lines[index])) {
-          throw new Error(`Expected a hunk header starting with "@@": ${lines[index]}`);
-        }
-        const oldLines: string[] = [];
-        const newLines: string[] = [];
-        let isEndOfFile = false;
-        while (
-          index < lines.length - 1 &&
-          !_isFileHeader(lines[index]) &&
-          !lines[index].startsWith("@@")
-        ) {
-          const line = lines[index++];
-          if (line.trim() === "*** End of File") {
-            isEndOfFile = true;
-            break;
-          }
-          const marker = line[0];
-          const content = line.slice(1);
-          if (marker === " ") {
-            oldLines.push(content);
-            newLines.push(content);
-          } else if (marker === "-") {
-            oldLines.push(content);
-          } else if (marker === "+") {
-            newLines.push(content);
-          } else {
-            throw new Error(`Invalid hunk line (expected space, "+", or "-"): ${line}`);
-          }
-        }
-        if (oldLines.length === 0 && newLines.length === 0) {
-          throw new Error(`Invalid empty hunk in ${filePath}.`);
-        }
-        hunks.push({ changeContext, oldLines, newLines, isEndOfFile });
-      }
-      if (hunks.length === 0) {
-        throw new Error(`Update contains no hunks: ${filePath}`);
-      }
-      patches.push({ type: "update", path: filePath, moveTo, hunks });
+      const result = _parseUpdateFile(lines, index, filePath);
+      patches.push(result.patch);
+      index = result.nextIndex;
       continue;
     }
     throw new Error(`Unknown patch header: ${header}`);
@@ -212,6 +146,115 @@ function _parsePatch(patchText: string): FilePatch[] {
     throw new Error("Patch contains no file operations.");
   }
   return patches;
+}
+
+function _parseAddFile(
+  lines: string[],
+  startIndex: number,
+  filePath: string
+): { patch: AddFilePatch; nextIndex: number } {
+  const added: string[] = [];
+  let index = startIndex;
+  while (index < lines.length - 1 && !_isFileHeader(lines[index])) {
+    const line = lines[index++];
+    if (!line.startsWith("+")) {
+      throw new Error(`Add-file lines must start with "+": ${line}`);
+    }
+    added.push(line.slice(1));
+  }
+  if (added.length === 0) {
+    throw new Error(`Add file hunk for path '${filePath}' is empty.`);
+  }
+  return {
+    patch: { type: "add", path: filePath, lines: added },
+    nextIndex: index,
+  };
+}
+
+function _parseUpdateFile(
+  lines: string[],
+  startIndex: number,
+  filePath: string
+): { patch: UpdateFilePatch; nextIndex: number } {
+  let index = startIndex;
+  let moveTo: string | undefined;
+  if (lines[index]?.trim().startsWith("*** Move to: ")) {
+    moveTo = _requiredHeaderPath(lines[index++].trim(), "*** Move to: ");
+  }
+  const hunks: PatchHunk[] = [];
+  while (index < lines.length - 1 && !_isFileHeader(lines[index])) {
+    if (
+      lines[index].trim() === "" &&
+      lines[index - 1].trim() === "*** End of File"
+    ) {
+      index++;
+      continue;
+    }
+    const hunkResult = _parseHunk(lines, index, hunks.length > 0, filePath);
+    hunks.push(hunkResult.hunk);
+    index = hunkResult.nextIndex;
+  }
+  if (hunks.length === 0) {
+    throw new Error(`Update contains no hunks: ${filePath}`);
+  }
+  return {
+    patch: { type: "update", path: filePath, moveTo, hunks },
+    nextIndex: index,
+  };
+}
+
+function _parseHunk(
+  lines: string[],
+  startIndex: number,
+  hasPreviousHunks: boolean,
+  filePath: string
+): { hunk: PatchHunk; nextIndex: number } {
+  let index = startIndex;
+  let changeContext: string | undefined;
+  if (lines[index].trim().startsWith("@@")) {
+    const hunkHeader = lines[index++].trim();
+    if (hunkHeader !== "@@") {
+      changeContext = hunkHeader.slice(2).trim();
+      if (!changeContext) {
+        throw new Error(`Invalid hunk header: ${hunkHeader}`);
+      }
+    }
+  } else if (hasPreviousHunks || !_isDiffLine(lines[index])) {
+    throw new Error(`Expected a hunk header starting with "@@": ${lines[index]}`);
+  }
+  const oldLines: string[] = [];
+  const newLines: string[] = [];
+  let isEndOfFile = false;
+  while (
+    index < lines.length - 1 &&
+    !_isFileHeader(lines[index]) &&
+    !lines[index].startsWith("@@")
+  ) {
+    const line = lines[index++];
+    if (line.trim() === "*** End of File") {
+      isEndOfFile = true;
+      break;
+    }
+    const marker = line[0];
+    const content = line.slice(1);
+    if (marker === " ") {
+      oldLines.push(content);
+      newLines.push(content);
+    } else if (marker === "-") {
+      oldLines.push(content);
+    } else if (marker === "+") {
+      newLines.push(content);
+    } else {
+      throw new Error(`Invalid hunk line (expected space, "+", or "-"): ${line}`);
+    }
+  }
+  if (oldLines.length === 0 && newLines.length === 0) {
+    throw new Error(`Invalid empty hunk in ${filePath}.`);
+  }
+  return {
+    hunk: { changeContext, oldLines, newLines, isEndOfFile },
+    nextIndex: index,
+  };
 }
 
 function _applyHunks(
