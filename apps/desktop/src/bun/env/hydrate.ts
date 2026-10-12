@@ -27,6 +27,9 @@ let _hydrated = false;
 /** Shells whose `-ilc "… env …"` contract behaves like POSIX `sh`. */
 const _POSIX_SHELLS = new Set(["zsh", "bash", "sh", "dash", "ksh"]);
 
+/** Shells supported for login environment resolution. */
+const _SUPPORTED_SHELLS = new Set([..._POSIX_SHELLS, "fish", "nu"]);
+
 /**
  * Keys that describe the *resolver* shell rather than the user's environment,
  * or that we injected ourselves — never transplant these onto our process.
@@ -61,23 +64,59 @@ export function hydrateShellEnv(): void {
   }
 }
 
+export type ShellSpawnSpec = {
+  command: string;
+  args: string[];
+};
+
+/**
+ * Build spawn specification (command and CLI arguments) for reading
+ * environment variables based on the target shell.
+ */
+export function _getShellSpawnSpec(
+  shell: string,
+  delimiter: string
+): ShellSpawnSpec {
+  const base = basename(shell);
+
+  if (base === "nu") {
+    // Nushell uses `-l` (login) and `-c` (commands).
+    // `print` outputs to stdout, and `^env` invokes external `env` binary.
+    return {
+      command: shell,
+      args: [
+        "-l",
+        "-c",
+        `print "${delimiter}"; ^env; print "${delimiter}"`,
+      ],
+    };
+  }
+
+  // POSIX shells (zsh, bash, sh, dash, ksh) and fish shell
+  return {
+    command: shell,
+    args: [
+      "-ilc",
+      `echo ${delimiter}; command env; echo ${delimiter}`,
+    ],
+  };
+}
+
 /**
  * Spawn the user's login + interactive shell and capture the environment it
- * prints. `-l` sources login profiles (`~/.zprofile`); `-i` additionally
- * sources the interactive rc (`~/.zshrc`), which is where most people actually
- * export their keys. The output is wrapped in a unique delimiter so
- * interactive-shell noise (session-restore banners, oh-my-zsh output) printed
- * before our command can be stripped.
+ * prints. The output is wrapped in a unique delimiter so interactive-shell
+ * noise (session-restore banners, oh-my-zsh output) printed before our command
+ * can be stripped.
  */
 function _readLoginShellEnv(): Record<string, string> | null {
   const shell = _resolveShell();
   const delimiter = `__LLM_SPACE_ENV_${Date.now()}_${Math.random()
     .toString(36)
     .slice(2)}__`;
-  // `command env` bypasses any user alias/function shadowing `env`.
-  const script = `echo ${delimiter}; command env; echo ${delimiter}`;
 
-  const result = Bun.spawnSync([shell, "-ilc", script], {
+  const spec = _getShellSpawnSpec(shell, delimiter);
+
+  const result = Bun.spawnSync([spec.command, ...spec.args], {
     env: {
       ...process.env,
       // Lets a user's rc detect this pass and skip interactive-only setup
@@ -97,17 +136,15 @@ function _readLoginShellEnv(): Record<string, string> | null {
 }
 
 /**
- * Pick a POSIX shell to resolve with. Prefer the user's `$SHELL`; if it is a
- * non-POSIX shell (fish, nushell) whose `env` invocation differs, fall back to a
- * standard shell so the `-ilc "… env …"` contract still holds.
+ * Pick a shell to resolve with. Prefer the user's `$SHELL` if it is a supported
+ * shell (POSIX shells, fish, nushell). Fall back to standard POSIX shell (`/bin/zsh`
+ * or `/bin/bash`).
  */
-function _resolveShell(): string {
+export function _resolveShell(): string {
   const shell = process.env.SHELL;
-  if (shell && _POSIX_SHELLS.has(basename(shell))) {
+  if (shell && _SUPPORTED_SHELLS.has(basename(shell))) {
     return shell;
   }
-  // TODO: read the fish/nushell environment natively instead of falling back,
-  // so variables exported *only* in their rc are still picked up.
   return existsSync("/bin/zsh") ? "/bin/zsh" : "/bin/bash";
 }
 
@@ -116,7 +153,7 @@ function _resolveShell(): string {
  * between the two delimiter markers. Values may span multiple lines, so a line
  * that does not start a new `KEY=` is appended to the previous value.
  */
-function _parseEnvBlock(
+export function _parseEnvBlock(
   output: string,
   delimiter: string
 ): Record<string, string> | null {
@@ -124,7 +161,9 @@ function _parseEnvBlock(
   const end = output.lastIndexOf(delimiter);
   if (start === -1 || end === -1 || start === end) return null;
 
-  const block = output.slice(start + delimiter.length, end);
+  const block = output
+    .slice(start + delimiter.length, end)
+    .replace(/\r?\n$/, "");
   const env: Record<string, string> = {};
   let lastKey: string | null = null;
 
