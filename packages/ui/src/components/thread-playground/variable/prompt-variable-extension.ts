@@ -247,17 +247,44 @@ const theme = EditorView.theme({
   },
 });
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function createSvgElement(
+  tag: string,
+  attrs: Record<string, string>
+): SVGElement {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const [key, val] of Object.entries(attrs)) {
+    el.setAttribute(key, val);
+  }
+  return el;
+}
+
 // Curly-braces glyph (lucide "braces") marking each option as a variable.
-// Static, trusted markup — never interpolates user data.
-function variableIconDom(): HTMLElement {
+export function variableIconDom(): HTMLElement {
   const wrap = document.createElement("span");
   wrap.className = "cm-pv-completion-icon";
-  wrap.innerHTML =
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></svg>';
+  const svg = createSvgElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "2",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+  });
+  const path1 = createSvgElement("path", {
+    d: "M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1",
+  });
+  const path2 = createSvgElement("path", {
+    d: "M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1",
+  });
+  svg.appendChild(path1);
+  svg.appendChild(path2);
+  wrap.appendChild(svg);
   return wrap;
 }
 
-function renderTooltipDom(
+export function renderTooltipDom(
   name: string,
   resolution: VariableResolution,
   onInspect?: (name: string) => void
@@ -280,8 +307,23 @@ function renderTooltipDom(
     button.className = "cm-pv-inspect";
     button.title = "View variable details";
     button.setAttribute("aria-label", "View variable details");
-    button.innerHTML =
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
+    const svg = createSvgElement("svg", {
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "2",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+    });
+    const path1 = createSvgElement("path", { d: "M15 3h6v6" });
+    const path2 = createSvgElement("path", { d: "M10 14 21 3" });
+    const path3 = createSvgElement("path", {
+      d: "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6",
+    });
+    svg.appendChild(path1);
+    svg.appendChild(path2);
+    svg.appendChild(path3);
+    button.appendChild(svg);
     // Keep editor focus/selection so opening the dialog doesn't disturb it.
     button.addEventListener("mousedown", (event) => event.preventDefault());
     button.addEventListener("click", (event) => {
