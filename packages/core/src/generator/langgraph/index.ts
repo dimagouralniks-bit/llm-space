@@ -270,14 +270,18 @@ export const langgraphGenerator: GeneratorDefinition = {
     // Tools: real built-in sources, function-tool stubs, and an MCP scaffold.
     // A few built-ins are generated with the user's config baked in (skill).
     await write("src/tools/__init__.py", pyInit());
-    const toolRefs: AgentToolRef[] = [];
-    for (const tool of builtinIncluded) {
-      const source = TEMPLATED_BUILTIN_TOOLS.has(tool.name)
-        ? _templatedBuiltinSource(tool.name, skills)
-        : builtinToolSource(tool.name)!;
-      await write(`src/tools/${tool.name}.py`, source);
-      toolRefs.push({ module: tool.name, symbol: tool.name });
-    }
+    const toolRefs: AgentToolRef[] = builtinIncluded.map((tool) => ({
+      module: tool.name,
+      symbol: tool.name,
+    }));
+    await Promise.all(
+      builtinIncluded.map(async (tool) => {
+        const source = TEMPLATED_BUILTIN_TOOLS.has(tool.name)
+          ? _templatedBuiltinSource(tool.name, skills)
+          : builtinToolSource(tool.name)!;
+        await write(`src/tools/${tool.name}.py`, source);
+      })
+    );
     for (const tool of functionTools) {
       const ident = toPyIdent(tool.name);
       await write(`src/tools/${ident}.py`, functionToolStub(tool));
