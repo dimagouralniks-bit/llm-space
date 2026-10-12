@@ -278,9 +278,14 @@ export const langgraphGenerator: GeneratorDefinition = {
       await write(`src/tools/${tool.name}.py`, source);
       toolRefs.push({ module: tool.name, symbol: tool.name });
     }
+    await Promise.all(
+      functionTools.map(async (tool) => {
+        const ident = toPyIdent(tool.name);
+        await write(`src/tools/${ident}.py`, functionToolStub(tool));
+      })
+    );
     for (const tool of functionTools) {
       const ident = toPyIdent(tool.name);
-      await write(`src/tools/${ident}.py`, functionToolStub(tool));
       toolRefs.push({ module: ident, symbol: ident });
     }
     if (hasMcp) {
