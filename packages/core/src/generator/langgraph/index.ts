@@ -147,8 +147,9 @@ export const langgraphGenerator: GeneratorDefinition = {
     const builtinTools = tools.filter(
       (t): t is BuiltinTool => t.type === "builtin"
     );
-    // Resolve the thread's MCP tools to their server configs (from settings, via
-    // the host) so we can emit a real MCP_SERVERS — not a TODO scaffold.
+    // Filter input.mcpServers to only those referenced by the thread's MCP tools.
+    // The host resolves these server configurations from settings so the generator
+    // can emit fully populated MCP_SERVERS dictionary entries in src/tools/mcp.py.
     const usedServerIds = new Set(mcpTools.map((t) => t.serverId));
     const mcpServers = (input.mcpServers ?? []).filter((s) =>
       usedServerIds.has(s.id)
