@@ -28,7 +28,7 @@ afterEach(() => {
   }
 });
 
-describe.serial("McpManager plugin readiness", () => {
+describe("McpManager plugin readiness", () => {
   test("restores plugin tool discovery without copying plugin secrets", async () => {
     const home = _home();
     const server = _pluginServer({
