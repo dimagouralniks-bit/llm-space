@@ -16,10 +16,11 @@ import { basename } from "node:path";
  *
  * Idempotent and best-effort — a failure just leaves the minimal env in place.
  *
- * TODO(windows): Windows GUI apps inherit their environment from `explorer.exe`
- * (backed by the `HKCU\Environment` registry), so this shell-based approach is
- * neither needed nor applicable there. If a real gap ever surfaces on Windows,
- * handle it separately (e.g. read the registry) instead of spawning a shell.
+ * Windows note: On Windows (`win32`), GUI applications launched via `explorer.exe`
+ * (or Start Menu / shortcuts) automatically inherit both system environment variables
+ * (`HKLM\System\CurrentControlSet\Control\Session Manager\Environment`) and user environment
+ * variables (`HKCU\Environment`). POSIX interactive shell spawning (`-ilc "env"`) is
+ * neither applicable nor needed on Windows. Therefore, `hydrateShellEnv` is a no-op on `win32`.
  */
 
 let _hydrated = false;
@@ -45,7 +46,6 @@ export function hydrateShellEnv(): void {
   _hydrated = true;
 
   if (process.platform === "win32") {
-    // See TODO(windows) above.
     return;
   }
 
@@ -70,7 +70,7 @@ export function hydrateShellEnv(): void {
  * before our command can be stripped.
  */
 function _readLoginShellEnv(): Record<string, string> | null {
-  const shell = _resolveShell();
+  const shell = resolveShell();
   const delimiter = `__LLM_SPACE_ENV_${Date.now()}_${Math.random()
     .toString(36)
     .slice(2)}__`;
@@ -93,7 +93,7 @@ function _readLoginShellEnv(): Record<string, string> | null {
   });
 
   if (!result.success) return null;
-  return _parseEnvBlock(Buffer.from(result.stdout).toString("utf8"), delimiter);
+  return parseEnvBlock(Buffer.from(result.stdout).toString("utf8"), delimiter);
 }
 
 /**
@@ -101,7 +101,7 @@ function _readLoginShellEnv(): Record<string, string> | null {
  * non-POSIX shell (fish, nushell) whose `env` invocation differs, fall back to a
  * standard shell so the `-ilc "… env …"` contract still holds.
  */
-function _resolveShell(): string {
+export function resolveShell(): string {
   const shell = process.env.SHELL;
   if (shell && _POSIX_SHELLS.has(basename(shell))) {
     return shell;
@@ -116,7 +116,7 @@ function _resolveShell(): string {
  * between the two delimiter markers. Values may span multiple lines, so a line
  * that does not start a new `KEY=` is appended to the previous value.
  */
-function _parseEnvBlock(
+export function parseEnvBlock(
   output: string,
   delimiter: string
 ): Record<string, string> | null {
@@ -124,7 +124,10 @@ function _parseEnvBlock(
   const end = output.lastIndexOf(delimiter);
   if (start === -1 || end === -1 || start === end) return null;
 
-  const block = output.slice(start + delimiter.length, end);
+  let block = output.slice(start + delimiter.length, end);
+  if (block.startsWith("\n")) block = block.slice(1);
+  if (block.endsWith("\n")) block = block.slice(0, -1);
+
   const env: Record<string, string> = {};
   let lastKey: string | null = null;
 
@@ -138,4 +141,9 @@ function _parseEnvBlock(
     }
   }
   return env;
+}
+
+/** Reset hydration state for unit testing purposes. */
+export function resetHydratedForTesting(): void {
+  _hydrated = false;
 }
