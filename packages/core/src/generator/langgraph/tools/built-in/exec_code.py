@@ -22,6 +22,9 @@ SESSION_IDLE_TTL_SECONDS = 30 * 60
 WORKSPACE_ROOT = os.getcwd()
 
 
+# Note: Python execution worker process script. Code passed to exec_code is executed
+# within an isolated worker child process spawned per session (`subprocess.Popen`),
+# running under an isolated namespace with process-level lifecycle timeouts and TTL.
 PYTHON_WORKER_SOURCE = r'''
 import ast
 import contextlib
@@ -52,6 +55,7 @@ for line in protocol_in:
             if tree.body and isinstance(tree.body[-1], ast.Expr):
                 statements = ast.Module(body=tree.body[:-1], type_ignores=[])
                 ast.fix_missing_locations(statements)
+                # Execute statement body within the worker process's session namespace
                 exec(compile(statements, "<exec_code>", "exec"), namespace)
                 expression = ast.Expression(tree.body[-1].value)
                 ast.fix_missing_locations(expression)
@@ -60,6 +64,7 @@ for line in protocol_in:
                 if value is not None:
                     result_text = repr(value)
             else:
+                # Execute single module within the worker process's session namespace
                 exec(compile(tree, "<exec_code>", "exec"), namespace)
     except BaseException:
         exit_code = 1
