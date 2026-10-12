@@ -111,7 +111,8 @@ export function discoverPlugins({
     counts.set(plugin.id, (counts.get(plugin.id) ?? 0) + 1);
   for (const [id, count] of counts) if (count > 1) duplicateIds.add(id);
   if (duplicateIds.size > 0) {
-    for (const plugin of plugins.filter((item) => duplicateIds.has(item.id))) {
+    const duplicatePlugins = plugins.filter((item) => duplicateIds.has(item.id));
+    for (const plugin of duplicatePlugins) {
       failures.push({
         id: plugin.id,
         rootPath: plugin.rootPath,
