@@ -165,11 +165,11 @@ export const langgraphGenerator: GeneratorDefinition = {
       }
     }
     const hasSpawnAgent = builtinIncluded.some(
-      (tool) => tool.name === "spawn_agent",
+      (tool) => tool.name === "spawn_agent"
     );
     if (hasSpawnAgent) {
       workflow.log(
-        "spawn_agent is not supported in Python exports; emitting an explicit NotImplementedError placeholder.",
+        "spawn_agent is not supported in Python exports; emitting an explicit NotImplementedError placeholder."
       );
     }
     const hasMcp = mcpTools.length > 0;
@@ -223,7 +223,9 @@ export const langgraphGenerator: GeneratorDefinition = {
           : "failed";
       if (depsInstall !== "installed") {
         const detail = (res.stderr || res.stdout || "").trim().slice(0, 300);
-        workflow.log(`uv sync ${depsInstall} — run \`uv sync\` yourself. ${detail}`);
+        workflow.log(
+          `uv sync ${depsInstall} — run \`uv sync\` yourself. ${detail}`
+        );
       }
     } else {
       workflow.log("uv not found — skipping dependency install");
@@ -292,9 +294,11 @@ export const langgraphGenerator: GeneratorDefinition = {
     await write("src/agents/agent.py", agentPy(toolRefs, hasMcp, hasMeta));
 
     workflow.phase("Export context");
-    for (const file of buildContextExports(context, rendered)) {
-      await write(file.path, file.contents);
-    }
+    await Promise.all(
+      buildContextExports(context, rendered).map((file) =>
+        write(file.path, file.contents)
+      )
+    );
 
     await write("PLAN.md", planMd(functionTools, mcpTools, hasSpawnAgent));
 
