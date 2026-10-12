@@ -32,7 +32,8 @@ describe("EXAMPLE_LOCALIZATIONS_ZH", () => {
     // The map is keyed by id and contains only label/description strings; the
     // catalog (system prompts, seed messages, fileStem filenames) is imported
     // read-only here and must stay the single source of truth for seeds.
-    for (const example of PROMPT_EXAMPLES.filter(isPromptExample)) {
+    const promptExamples = PROMPT_EXAMPLES.filter(isPromptExample);
+    for (const example of promptExamples) {
       expect(typeof example.fileStem).toBe("string");
       expect(example.fileStem.length).toBeGreaterThan(0);
     }
