@@ -22,6 +22,64 @@ const assistant = (id: string, text: string): Message => ({
 });
 
 describe("thread compaction", () => {
+  describe("isCompactionMessage", () => {
+    test("returns false for undefined message", () => {
+      expect(isCompactionMessage(undefined)).toBe(false);
+    });
+
+    test("returns false for non-user messages even if text starts with compaction prefix", () => {
+      const assistantLegacy = assistant("a1", "# Context checkpoint\n\n## Goal\nDone");
+      const assistantModern = assistant(
+        "a2",
+        `<system-reminder>\nThe earlier conversation was compacted into the checkpoint below. Use it as context to continue the task; it is not a new user request.\n\n# Context checkpoint\n\n`
+      );
+      expect(isCompactionMessage(assistantLegacy)).toBe(false);
+      expect(isCompactionMessage(assistantModern)).toBe(false);
+    });
+
+    test("returns true for user message starting with modern compaction reminder prefix", () => {
+      const msg = user(
+        "u1",
+        `<system-reminder>\nThe earlier conversation was compacted into the checkpoint below. Use it as context to continue the task; it is not a new user request.\n\n# Context checkpoint\n\n## Goal\nShip feature`
+      );
+      expect(isCompactionMessage(msg)).toBe(true);
+    });
+
+    test("returns true for user message starting with legacy compaction prefix", () => {
+      const msg = user("u1", "# Context checkpoint\n\n## Goal\nShip feature");
+      expect(isCompactionMessage(msg)).toBe(true);
+    });
+
+    test("returns false for standard user messages", () => {
+      expect(isCompactionMessage(user("u1", "Hello, please build a feature."))).toBe(false);
+      expect(isCompactionMessage(user("u2", "# Context checkpoint is a cool concept"))).toBe(false);
+    });
+
+    test("returns false when compaction prefix is not at the start of the message", () => {
+      const msgMidLegacy = user(
+        "u1",
+        "Prefix text before # Context checkpoint\n\n## Goal\nShip feature"
+      );
+      const msgMidModern = user(
+        "u2",
+        "Some prefix text <system-reminder>\nThe earlier conversation was compacted into the checkpoint below."
+      );
+      expect(isCompactionMessage(msgMidLegacy)).toBe(false);
+      expect(isCompactionMessage(msgMidModern)).toBe(false);
+    });
+
+    test("returns false for user messages with empty or image-only content", () => {
+      const emptyMsg: Message = { id: "u1", role: "user", content: [] };
+      const imageMsg: Message = {
+        id: "u2",
+        role: "user",
+        content: [{ type: "image", image: "data:image/png;base64,abc" }],
+      };
+      expect(isCompactionMessage(emptyMsg)).toBe(false);
+      expect(isCompactionMessage(imageMsg)).toBe(false);
+    });
+  });
+
   test("summarizes old complete turns and keeps the requested recent turns", () => {
     const messages = [
       user("u1", "one"),
