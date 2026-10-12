@@ -310,7 +310,9 @@ description: |
         );
       }
       const script = `
+import asyncio
 import importlib.util
+import inspect
 import pathlib
 import sys
 import types
@@ -327,20 +329,25 @@ def load(name):
     spec.loader.exec_module(module)
     return module
 
+def call_tool(fn, *args, **kwargs):
+    if inspect.iscoroutinefunction(fn):
+        return asyncio.run(fn(*args, **kwargs))
+    return fn(*args, **kwargs)
+
 mods = {name: load(name) for name in ${JSON.stringify(toolNames)}}
 fixture = pathlib.Path.home() / "fixture"
 fixture.mkdir()
 target = fixture / "example.txt"
 
-mods["write"].write("write", "~/fixture/example.txt", "before target")
+call_tool(mods["write"].write, "write", "~/fixture/example.txt", "before target")
 assert target.read_text(encoding="utf-8") == "before target"
-mods["edit"].edit("edit", "~/fixture/example.txt", "before", "after")
+call_tool(mods["edit"].edit, "edit", "~/fixture/example.txt", "before", "after")
 assert target.read_text(encoding="utf-8") == "after target"
-assert mods["read"].read("read", "~/fixture/example.txt") == "1\\tafter target"
-assert mods["ls"].ls("ls", "~/fixture") == "example.txt"
-assert "example.txt" in mods["tree"].tree("tree", "~/fixture")
-assert str(target) in mods["grep"].grep("grep", "target", "~/fixture")
-glob_result = mods["glob"].glob("glob", "*.txt", "~/fixture")
+assert call_tool(mods["read"].read, "read", "~/fixture/example.txt") == "1\\tafter target"
+assert call_tool(mods["ls"].ls, "ls", "~/fixture") == "example.txt"
+assert "example.txt" in call_tool(mods["tree"].tree, "tree", "~/fixture")
+assert str(target) in call_tool(mods["grep"].grep, "grep", "target", "~/fixture")
+glob_result = call_tool(mods["glob"].glob, "glob", "*.txt", "~/fixture")
 assert glob_result == str(target.resolve()), repr(glob_result)
 
 report = fixture / "report.html"

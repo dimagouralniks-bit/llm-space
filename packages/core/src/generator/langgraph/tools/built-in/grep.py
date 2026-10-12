@@ -1,5 +1,5 @@
+import asyncio
 import os
-import subprocess
 
 from langchain.tools import tool
 
@@ -30,7 +30,7 @@ DEFAULT_IGNORES = [
 
 
 @tool
-def grep(
+async def grep(
     description: str,
     pattern: str,
     path: str,
@@ -71,12 +71,19 @@ def grep(
         args += ["--context", str(int(context_lines))]
     args += ["--regexp", pattern, "--", path]
 
-    result = subprocess.run(args, capture_output=True, text=True)
-    if result.returncode == 1:
+    process = await asyncio.create_subprocess_exec(
+        *args,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout_bytes, stderr_bytes = await process.communicate()
+
+    if process.returncode == 1:
         return "No matches found."
-    if result.returncode != 0:
+    if process.returncode != 0:
+        stderr_str = stderr_bytes.decode("utf-8", errors="replace").strip()
         raise RuntimeError(
-            result.stderr.strip()
-            or f"grep failed with exit code {result.returncode}."
+            stderr_str
+            or f"grep failed with exit code {process.returncode}."
         )
-    return result.stdout.rstrip()
+    return stdout_bytes.decode("utf-8", errors="replace").rstrip()
