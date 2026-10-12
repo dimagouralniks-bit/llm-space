@@ -204,16 +204,26 @@ def _resolve_cwd(requested_cwd: Optional[str], fallback: str) -> str:
     return str(resolved)
 
 
+def _reap_process(process: subprocess.Popen) -> None:
+    for stream in (process.stdin, process.stdout, process.stderr):
+        if stream is not None:
+            try:
+                stream.close()
+            except Exception:
+                pass
+    try:
+        process.wait(timeout=5)
+    except Exception:
+        pass
+
+
 def _destroy_session(session: CodeSession) -> None:
     with SESSIONS_LOCK:
         if SESSIONS.get(session.id) is session:
             del SESSIONS[session.id]
     if session.process.poll() is None:
         session.process.kill()
-    try:
-        session.process.wait(timeout=1)
-    except subprocess.TimeoutExpired:
-        pass
+    threading.Thread(target=_reap_process, args=(session.process,), daemon=True).start()
 
 
 def _prune_sessions() -> None:
