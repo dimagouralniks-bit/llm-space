@@ -516,14 +516,20 @@ function _resolveOpenAiImage(
   const imageUrl = _asRecord(b.image_url);
   const rawUrl = imageUrl?.url ?? b.image_url;
   const url = typeof rawUrl === "string" ? rawUrl : undefined;
-  if (!url) {
+  if (!url || !url.startsWith("data:")) {
     return undefined;
   }
-  const match = /^data:(image\/\w+);base64,(.*)$/s.exec(url);
-  if (match?.[1] === undefined || match[2] === undefined) {
+  const base64Marker = ";base64,";
+  const markerIndex = url.indexOf(base64Marker);
+  if (markerIndex === -1) {
     return undefined;
   }
-  return _imageContent(match[1], match[2]);
+  const mimeType = url.slice(5, markerIndex);
+  if (!/^image\/\w+$/.test(mimeType)) {
+    return undefined;
+  }
+  const data = url.slice(markerIndex + base64Marker.length);
+  return _imageContent(mimeType, data);
 }
 
 /** Build image content in pi's model-facing shape without another conversion. */
