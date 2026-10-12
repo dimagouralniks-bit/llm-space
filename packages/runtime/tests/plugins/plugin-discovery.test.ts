@@ -96,6 +96,16 @@ describe("discoverPlugins", () => {
     ).toEqual(["bad-version", "linked-extensions"]);
   });
 
+  test("discovers multiple unique plugins without failures", () => {
+    const home = _home();
+    _plugin(home, "plugin-a");
+    _plugin(home, "plugin-b");
+
+    const result = _discover(home);
+    expect(result.plugins.map((p) => p.id).sort()).toEqual(["plugin-a", "plugin-b"]);
+    expect(result.failures).toHaveLength(0);
+  });
+
   test("embeds a valid PNG icon and ignores invalid image data", () => {
     const home = _home();
     const valid = _plugin(home, "valid-icon");
