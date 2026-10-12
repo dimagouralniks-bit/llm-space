@@ -390,34 +390,48 @@ export class TraceManager {
     const warnings: string[] = [];
     let skipped = 0;
 
-    for (const traceId of requested) {
-      try {
-        const result = await client.getObservationsForTrace(traceId);
-        if (result.rows.length === 0) {
-          skipped += 1;
-          warnings.push(`Trace ${traceId}: no observations found.`);
-          continue;
+    const results = await Promise.all(
+      requested.map(async (traceId) => {
+        try {
+          const result = await client.getObservationsForTrace(traceId);
+          if (result.rows.length === 0) {
+            return {
+              status: "skipped" as const,
+              warning: `Trace ${traceId}: no observations found.`,
+            };
+          }
+          if (result.truncated) {
+            return {
+              status: "skipped" as const,
+              warning: `Trace ${traceId}: more than ${result.rows.length} observations found; V1 sync is capped at ${result.maxPages} pages, so no partial trace was imported.`,
+            };
+          }
+          const trace = await this._writeImportedTrace({
+            project,
+            sourceMode: "connected",
+            traceId,
+            rows: result.rows,
+            upsert: true,
+          });
+          return {
+            status: "success" as const,
+            trace,
+          };
+        } catch (error) {
+          return {
+            status: "error" as const,
+            warning: `Trace ${traceId}: ${_errorMessage(error, "Langfuse sync failed.")}`,
+          };
         }
-        if (result.truncated) {
-          skipped += 1;
-          warnings.push(
-            `Trace ${traceId}: more than ${result.rows.length} observations found; V1 sync is capped at ${result.maxPages} pages, so no partial trace was imported.`
-          );
-          continue;
-        }
-        const trace = await this._writeImportedTrace({
-          project,
-          sourceMode: "connected",
-          traceId,
-          rows: result.rows,
-          upsert: true,
-        });
-        imported.push(trace);
-      } catch (error) {
+      })
+    );
+
+    for (const res of results) {
+      if (res.status === "success") {
+        imported.push(res.trace);
+      } else {
         skipped += 1;
-        warnings.push(
-          `Trace ${traceId}: ${_errorMessage(error, "Langfuse sync failed.")}`
-        );
+        warnings.push(res.warning);
       }
     }
 
