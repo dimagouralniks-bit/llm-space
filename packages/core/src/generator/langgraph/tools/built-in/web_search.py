@@ -1,6 +1,6 @@
 import os
 
-import requests
+import httpx
 from langchain.tools import tool
 
 FIRECRAWL_BASE_URL = "https://api.firecrawl.dev"
@@ -14,7 +14,7 @@ def _truncate_text(text: str, max_chars: int) -> str:
     return text[:max_chars] + "\n\n[Content truncated]"
 
 
-def _firecrawl_search(query: str, limit: int, include_content: bool) -> list[dict]:
+async def _firecrawl_search(query: str, limit: int, include_content: bool) -> list[dict]:
     """Firecrawl web search. The free, unauthenticated tier works without a key;
     ``FIRECRAWL_API_KEY`` upgrades to the authenticated one."""
     headers = {"Content-Type": "application/json"}
@@ -22,17 +22,18 @@ def _firecrawl_search(query: str, limit: int, include_content: bool) -> list[dic
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    res = requests.post(
-        f"{FIRECRAWL_BASE_URL}/v2/search",
-        headers=headers,
-        json={
-            "query": query,
-            "limit": limit,
-            "scrapeOptions": {"formats": ["markdown"], "onlyMainContent": True},
-        },
-    )
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{FIRECRAWL_BASE_URL}/v2/search",
+            headers=headers,
+            json={
+                "query": query,
+                "limit": limit,
+                "scrapeOptions": {"formats": ["markdown"], "onlyMainContent": True},
+            },
+        )
     json_body = res.json()
-    if not res.ok or json_body.get("error"):
+    if res.status_code >= 400 or json_body.get("error"):
         raise RuntimeError(json_body.get("error") or f"web_search failed: {res.status_code}")
 
     web_results = (json_body.get("data") or {}).get("web") or []
@@ -52,22 +53,23 @@ def _firecrawl_search(query: str, limit: int, include_content: bool) -> list[dic
     return results
 
 
-def _tavily_search(query: str, limit: int, include_content: bool) -> list[dict]:
+async def _tavily_search(query: str, limit: int, include_content: bool) -> list[dict]:
     """Tavily web search. Requires ``TAVILY_API_KEY`` (no free tier)."""
     api_key = os.environ.get("TAVILY_API_KEY")
     if not api_key:
         raise RuntimeError("Tavily API key is not configured. Set TAVILY_API_KEY.")
 
-    res = requests.post(
-        f"{TAVILY_BASE_URL}/search",
-        headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-        json={
-            "query": query,
-            "max_results": limit,
-            "include_raw_content": "markdown" if include_content else False,
-        },
-    )
-    if not res.ok:
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{TAVILY_BASE_URL}/search",
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+            json={
+                "query": query,
+                "max_results": limit,
+                "include_raw_content": "markdown" if include_content else False,
+            },
+        )
+    if res.status_code >= 400:
         raise RuntimeError(f"web_search failed: {res.status_code}")
 
     results = []
@@ -86,7 +88,7 @@ def _tavily_search(query: str, limit: int, include_content: bool) -> list[dict]:
     return results
 
 
-def _brave_search(query: str, limit: int, include_content: bool) -> list[dict]:
+async def _brave_search(query: str, limit: int, include_content: bool) -> list[dict]:
     """Brave web search. Requires ``BRAVE_API_KEY`` (no free tier)."""
     api_key = os.environ.get("BRAVE_API_KEY")
     if not api_key:
@@ -100,13 +102,14 @@ def _brave_search(query: str, limit: int, include_content: bool) -> list[dict]:
     if include_content:
         params["extra_snippets"] = "true"
 
-    res = requests.get(
-        BRAVE_SEARCH_URL,
-        headers={"Accept": "application/json", "X-Subscription-Token": api_key},
-        params=params,
-    )
+    async with httpx.AsyncClient() as client:
+        res = await client.get(
+            BRAVE_SEARCH_URL,
+            headers={"Accept": "application/json", "X-Subscription-Token": api_key},
+            params=params,
+        )
     json_body = res.json()
-    if not res.ok:
+    if res.status_code >= 400:
         error = json_body.get("error") or {}
         raise RuntimeError(
             error.get("detail")
@@ -134,7 +137,7 @@ def _brave_search(query: str, limit: int, include_content: bool) -> list[dict]:
 
 
 @tool
-def web_search(query: str, limit: int = 5, includeContent: bool = False) -> list[dict]:
+async def web_search(query: str, limit: int = 5, includeContent: bool = False) -> list[dict]:
     """Search the web and return LLM-friendly results.
 
     Search the web and return LLM-friendly results.
@@ -150,7 +153,7 @@ def web_search(query: str, limit: int = 5, includeContent: bool = False) -> list
     """
     provider = os.environ.get("SEARCH_PROVIDER", "firecrawl").strip().lower()
     if provider == "tavily":
-        return _tavily_search(query, limit, includeContent)
+        return await _tavily_search(query, limit, includeContent)
     if provider == "brave":
-        return _brave_search(query, limit, includeContent)
-    return _firecrawl_search(query, limit, includeContent)
+        return await _brave_search(query, limit, includeContent)
+    return await _firecrawl_search(query, limit, includeContent)
