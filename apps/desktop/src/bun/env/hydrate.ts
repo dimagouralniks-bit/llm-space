@@ -6,7 +6,8 @@ import { basename } from "node:path";
  *
  * GUI launches on macOS (Finder/Dock/Spotlight → `launchd`) and Linux (desktop
  * launchers) do NOT run a login shell, so the process never inherits the
- * variables a user exports in `~/.zshrc` / `~/.zprofile` / `~/.bash_profile` —
+ * variables a user exports in `~/.zshrc` / `~/.zprofile` / `~/.bash_profile` /
+ * `~/.config/fish/config.fish` / `~/.config/nushell/config.nu` —
  * it sees only `launchd`'s minimal environment. Anything reading `process.env`
  * (API keys, `PATH`) is then wrong compared to a terminal launch, which is why
  * it "works in dev but not in the packaged app".
@@ -24,8 +25,17 @@ import { basename } from "node:path";
 
 let _hydrated = false;
 
-/** Shells whose `-ilc "… env …"` contract behaves like POSIX `sh`. */
-const _POSIX_SHELLS = new Set(["zsh", "bash", "sh", "dash", "ksh"]);
+/** Shells supported natively for environment resolution. */
+const _SUPPORTED_SHELLS = new Set([
+  "zsh",
+  "bash",
+  "sh",
+  "dash",
+  "ksh",
+  "fish",
+  "nu",
+  "nushell",
+]);
 
 /**
  * Keys that describe the *resolver* shell rather than the user's environment,
@@ -74,10 +84,9 @@ function _readLoginShellEnv(): Record<string, string> | null {
   const delimiter = `__LLM_SPACE_ENV_${Date.now()}_${Math.random()
     .toString(36)
     .slice(2)}__`;
-  // `command env` bypasses any user alias/function shadowing `env`.
-  const script = `echo ${delimiter}; command env; echo ${delimiter}`;
+  const args = _getShellArgs(shell, delimiter);
 
-  const result = Bun.spawnSync([shell, "-ilc", script], {
+  const result = Bun.spawnSync(args, {
     env: {
       ...process.env,
       // Lets a user's rc detect this pass and skip interactive-only setup
@@ -97,18 +106,35 @@ function _readLoginShellEnv(): Record<string, string> | null {
 }
 
 /**
- * Pick a POSIX shell to resolve with. Prefer the user's `$SHELL`; if it is a
- * non-POSIX shell (fish, nushell) whose `env` invocation differs, fall back to a
- * standard shell so the `-ilc "… env …"` contract still holds.
+ * Pick a shell to resolve with. Prefer the user's `$SHELL`; if it is unassigned
+ * or unrecognized, fall back to a standard POSIX shell (`/bin/zsh` or `/bin/bash`).
  */
-function _resolveShell(): string {
-  const shell = process.env.SHELL;
-  if (shell && _POSIX_SHELLS.has(basename(shell))) {
-    return shell;
+export function _resolveShell(userShell = process.env.SHELL): string {
+  if (userShell && _SUPPORTED_SHELLS.has(basename(userShell))) {
+    return userShell;
   }
-  // TODO: read the fish/nushell environment natively instead of falling back,
-  // so variables exported *only* in their rc are still picked up.
   return existsSync("/bin/zsh") ? "/bin/zsh" : "/bin/bash";
+}
+
+/**
+ * Build spawn command arguments for the given shell to output environment variables.
+ */
+export function _getShellArgs(shell: string, delimiter: string): string[] {
+  const name = basename(shell);
+  if (name === "fish") {
+    // `command env` bypasses any user alias/function shadowing `env`.
+    const script = `echo ${delimiter}; command env; echo ${delimiter}`;
+    return [shell, "-ilc", script];
+  }
+  if (name === "nu" || name === "nushell") {
+    // In nushell, `^env` runs external `env`, bypassing any custom command or alias.
+    // Nushell requires separate `-l`, `-i`, `-c` flags.
+    const script = `echo ${delimiter}; ^env; echo ${delimiter}`;
+    return [shell, "-l", "-i", "-c", script];
+  }
+  // POSIX shells (zsh, bash, sh, dash, ksh)
+  const script = `echo ${delimiter}; command env; echo ${delimiter}`;
+  return [shell, "-ilc", script];
 }
 
 /**
@@ -116,7 +142,7 @@ function _resolveShell(): string {
  * between the two delimiter markers. Values may span multiple lines, so a line
  * that does not start a new `KEY=` is appended to the previous value.
  */
-function _parseEnvBlock(
+export function _parseEnvBlock(
   output: string,
   delimiter: string
 ): Record<string, string> | null {
@@ -124,7 +150,10 @@ function _parseEnvBlock(
   const end = output.lastIndexOf(delimiter);
   if (start === -1 || end === -1 || start === end) return null;
 
-  const block = output.slice(start + delimiter.length, end);
+  let block = output.slice(start + delimiter.length, end);
+  if (block.startsWith("\n")) block = block.slice(1);
+  if (block.endsWith("\n")) block = block.slice(0, -1);
+
   const env: Record<string, string> = {};
   let lastKey: string | null = null;
 
