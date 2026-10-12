@@ -110,7 +110,6 @@ export function MemoryPage() {
 
   const memories = useMemo(() => data?.memories ?? [], [data]);
 
-  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: memories.length,
     getScrollElement: () => scrollRef.current,

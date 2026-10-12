@@ -212,8 +212,6 @@ export function MessageListView({
     },
     [collapsedMessageIdSet, displayMessages]
   );
-  // TanStack Virtual exposes a mutable imperative controller by design.
-  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer<HTMLElement, HTMLDivElement>({
     count: shouldVirtualize ? displayRows.length : 0,
     estimateSize: estimateMessageSize,
