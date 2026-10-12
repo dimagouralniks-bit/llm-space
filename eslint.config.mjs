@@ -121,12 +121,14 @@ export default defineConfig([
       // implementation `_Foo`, which rules-of-hooks reads as a non-component
       // (must start with an uppercase letter), flagging every hook call inside.
       "react-hooks/rules-of-hooks": "off",
-      // These two React-Compiler rules mostly flag intentional, correct
+      // These React-Compiler rules mostly flag intentional, correct
       // patterns in this codebase — the latest-ref pattern, drag-and-drop
-      // render props, and controlled-state resets — so they're off.
+      // render props, controlled-state resets, and third-party imperative
+      // library controllers (e.g. TanStack Virtual) — so they're off.
       // exhaustive-deps (warn, upstream) stays on.
       "react-hooks/set-state-in-effect": "off",
       "react-hooks/refs": "off",
+      "react-hooks/incompatible-library": "off",
       "react/react-in-jsx-scope": "off",
     },
   },
