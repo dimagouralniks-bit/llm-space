@@ -811,13 +811,14 @@ function PageWorkspace({
     },
   });
 
+  const hasRunStartupOnboardCheckRef = useRef(false);
   // On a fresh launch with no configured models, prompt onboarding. Runs once on
-  // mount; adding or removing providers afterwards won't re-trigger it.
-  // Deps intentionally empty: this is a one-shot startup check, not reactive.
+  // initial check; adding or removing providers afterwards won't re-trigger it.
   useEffect(() => {
+    if (hasRunStartupOnboardCheckRef.current) return;
+    hasRunStartupOnboardCheckRef.current = true;
     if (models.length === 0) setOnboardOpen(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot startup check; must not re-run when models change
-  }, []);
+  }, [models]);
 
   // Bridge commands dispatched from the bun process (native menu / shortcuts)
   // into the renderer dispatcher.
