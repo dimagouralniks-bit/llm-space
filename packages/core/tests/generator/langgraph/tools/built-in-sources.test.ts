@@ -71,7 +71,9 @@ sys.modules[spec.name] = module
 spec.loader.exec_module(module)
 
 python_first = module.exec_code(
-    "test python", "python", """values = [2, 3, 5]
+    "test python", "python", """import sys
+assert sys.flags.isolated == 1
+values = [2, 3, 5]
 sum(values)""", None,
     timeout_ms=5000,
 )

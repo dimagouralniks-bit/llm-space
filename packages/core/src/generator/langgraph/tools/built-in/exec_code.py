@@ -243,7 +243,7 @@ def _spawn_session(runtime: str, cwd: str) -> CodeSession:
                 oldest.process.kill()
 
         if runtime == "python":
-            command = [sys.executable, "-u", "-c", PYTHON_WORKER_SOURCE]
+            command = [sys.executable, "-I", "-u", "-c", PYTHON_WORKER_SOURCE]
         else:
             bun = shutil.which("bun")
             if bun is None:
