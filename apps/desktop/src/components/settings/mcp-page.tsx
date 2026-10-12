@@ -266,8 +266,18 @@ export function McpPage({ runtimeId }: { runtimeId: RuntimeId }) {
     void refresh();
   }, [refresh]);
 
+  const prevServerIdRef = useRef<string | null | undefined>(undefined);
+  const prevCreatingRef = useRef<boolean | undefined>(undefined);
+
   useEffect(() => {
-    if (!creating) {
+    const currentServerId = selectedServer?.id ?? null;
+    const serverIdChanged = currentServerId !== prevServerIdRef.current;
+    const creatingChanged = creating !== prevCreatingRef.current;
+
+    prevServerIdRef.current = currentServerId;
+    prevCreatingRef.current = creating;
+
+    if (!creating && (serverIdChanged || creatingChanged)) {
       if (preserveFormAfterCreateRef.current) {
         preserveFormAfterCreateRef.current = false;
       } else {
@@ -276,8 +286,7 @@ export function McpPage({ runtimeId }: { runtimeId: RuntimeId }) {
       }
       setTools([]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset form only when the selected server's id changes, not on every object update (would clobber in-progress edits)
-  }, [creating, selectedServer?.id]);
+  }, [creating, selectedServer]);
 
   const createServer = (draft?: McpServerDraft) => {
     if (!creating) setSelectedIdBeforeCreate(selectedId);
