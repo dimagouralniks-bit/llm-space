@@ -208,26 +208,30 @@ export class McpManager {
   async setPluginServers(
     entries: { pluginId: string; server: McpServerConfig }[]
   ): Promise<void> {
-    const nextIds = new Set(entries.map((entry) => entry.server.id));
     const nextFingerprints = new Map(
       entries.map(
         (entry) =>
           [entry.server.id, _serverConfigFingerprint(entry.server)] as const
       )
     );
-    await Promise.all(
-      this._pluginServers
-        .filter(
-          (entry) =>
-            !nextIds.has(entry.server.id) ||
-            nextFingerprints.get(entry.server.id) !==
-              _serverConfigFingerprint(entry.server)
-        )
-        .map(async (entry) => {
+
+    const serversToClose = this._pluginServers.filter((entry) => {
+      const nextFingerprint = nextFingerprints.get(entry.server.id);
+      return (
+        nextFingerprint === undefined ||
+        nextFingerprint !== _serverConfigFingerprint(entry.server)
+      );
+    });
+
+    if (serversToClose.length > 0) {
+      await Promise.all(
+        serversToClose.map(async (entry) => {
           await this._closeServer(entry.server.id);
           this._status.delete(entry.server.id);
         })
-    );
+      );
+    }
+
     const userIds = new Set(this._config.servers.map((server) => server.id));
     const counts = new Map<string, number>();
     for (const entry of entries) {
@@ -240,7 +244,9 @@ export class McpManager {
           !userIds.has(entry.server.id) && counts.get(entry.server.id) === 1
       )
       .map((entry) => {
-        const configFingerprint = _serverConfigFingerprint(entry.server);
+        const configFingerprint =
+          nextFingerprints.get(entry.server.id) ??
+          _serverConfigFingerprint(entry.server);
         const cached = this._pluginReadinessCache.servers[entry.server.id];
         if (!cached) {
           return entry;
